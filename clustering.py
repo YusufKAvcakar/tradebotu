@@ -24,16 +24,17 @@ def main(assetname, period):
     df['Return'] = (df['Close']/df['Close'].shift(7)-1)*100
     df.reset_index(inplace=True)
     df['assetname'] = [assetname for i in range(len(df))]
-
+    df = rsi_adding(df, df[['Close']])
+    df = dmi_adding(df, df[['High','Low','Close']])
     #çekilen kapanış verisine rsi verilerini ekleme
-    return rsi_adding(df[['Date','assetname','Close', 'Return']])
+    return df
 
 #çekilen kapanış verisine rsi verilerini ekleme
-def rsi_adding(df):
+def rsi_adding(df, input):
     rsi_dict = {}
     for j in range(14,210,56):
         rsi_column_name = f'RSI{j}'
-        rsi_dict[rsi_column_name] = ta.rsi(df['Close'], j)
+        rsi_dict[rsi_column_name] = ta.rsi(input['Close'], j)
         # df['RSI'+str(j)]=ta.rsi(df['Close'],j)
 
     rsi_df = pd.DataFrame(rsi_dict, index=df.index)
@@ -48,9 +49,24 @@ def train_determination(df):
     for i in df.columns:
         if 'RSI' in i:
             train_list.append(i)
+        if 'dm' in df.columns:
+            train_list.append(i)
 
     df_train = df[train_list]
     return df_train
+
+def dmi_adding(df, input):
+    dmi_dict = {}
+    for j in range(14,210,56):
+        dmi_column_name = f'DMI{j}'
+        dmi = ta.adx(input['High'], input['Low'],input['Close'], j)
+        dmi['Difference_dm'] = dmi[dmi.columns[1]]-dmi[dmi.columns[2]]
+        dmi_dict[dmi_column_name] = dmi['Difference_dm']      
+     
+    dmi_df = pd.DataFrame(dmi_dict, index=df.index)
+    df = pd.concat([df, dmi_df], axis=1)
+
+    return df    
 
 #her indikatör verisi kendi içerisinde scale ediliyor
 def scaling(df_train):
@@ -68,52 +84,14 @@ def clustering(scaled_train, actual_data, cluster_number ,sort=True):
     actual_data['category'] = labels_train
 
     if sort:
-        list_for_sort = actual_data.columns[4:]
+        list_for_sort = actual_data.columns[7:]
         data_with_sorted_clusteres = sort_categorization(actual_data, list_for_sort)
     
     return data_with_sorted_clusteres
 
-#görselleştirme
-def plot_stocks(data, stock):
-    # Assigns plotly as visualization engine
-    pd.options.plotting.backend = 'plotly'
-    # Arbitrarily 6 colors for our 6 clusters
-    custom_colorscale = [
-        [0, 'green'],  # 0, yeşil
-        [1, 'red']     # 1, kırmızı
-    ]
-    # Create Scatter plot, assigning each point a color based
-    # on it's grouping where group_number == index of color.
-    fig = data.plot.scatter(
-        x='Date',
-        y="Close",
-        color=data['new_category'],
-        color_continuous_scale=custom_colorscale,
-    )
-
-
-    # Configure some styles
-    layout = go.Layout(
-        plot_bgcolor='#efefef',
-        showlegend=False,
-        # Font Families
-        font_family='Monospace',
-        font_color='#000000',
-        font_size=20,
-        xaxis=dict(
-            rangeslider=dict(
-                visible=False
-            ))
-    )
-
-    # fig.update_yaxes(type="log")
-    fig.update_layout(layout, yaxis_type="log", title=stock)
-    # Display plot in local browser window
-    fig.show()
-
 def new_plot(data, stock):
     fig = make_subplots(
-    rows=2,
+    rows=3,
     cols=1,
     shared_xaxes=True,
     subplot_titles=["Original Scatter", "Lines by Category"])
@@ -141,7 +119,7 @@ def new_plot(data, stock):
     )),
     row=1,col=1)
 
-    for i in range(4,len(data.columns)-2):
+    for i in range(7,11):
         fig.add_trace(go.Scatter(
         x=data['Date'],
         y=data[data.columns[i]],
@@ -171,6 +149,37 @@ def new_plot(data, stock):
                     visible=False
                 ))
         )
+
+    for i in range(11,15):
+            fig.add_trace(go.Scatter(
+            x=data['Date'],
+            y=data[data.columns[i]],
+            mode='markers',
+            marker=dict(
+                color=data['new_category'],
+                colorscale=custom_colorscale,
+                showscale=True
+            ),
+            name="Original Scatter",
+            hovertemplate=(
+                "<b>Date</b>: %{x}<br>" +     # X ekseni değeri
+                "<b>Close</b>: %{y}<br>" +   # Y ekseni değeri
+                "<b>Category</b>: %{marker.color}<extra></extra>"  # new_category değeri
+            )),
+            row=3, col=1)
+
+            layout = go.Layout(
+                plot_bgcolor='#efefef',
+                showlegend=False,
+                # Font Families
+                font_family='Monospace',
+                font_color='#000000',
+                font_size=20,
+                xaxis=dict(
+                    rangeslider=dict(
+                        visible=False
+                    ))
+            )
 
     fig.update_yaxes(type="log", row=1)
     fig.update_layout(layout, title=stock)
@@ -264,25 +273,20 @@ for i in bist30:
 data.dropna(inplace=True)
 data_train = train_determination(data)
 data_train_scaled = scaling(data_train)
-clustered_data = clustering(data_train_scaled, data, 50)
+clustered_data = clustering(data_train_scaled, data, 20)
 
 stocks_list = clustered_data['assetname'].unique()
 
-categories = list(range(0, 50))
-transition_matrix, return_matrix, expected_matrix = create_transition_matrix(clustered_data['new_category'].values, clustered_data['Return'].values, categories)
+# categories = list(range(0, 50))
+# transition_matrix, return_matrix, expected_matrix = create_transition_matrix(clustered_data['new_category'].values, clustered_data['Return'].values, categories)
 
-plot_heatmap(expected_matrix, categories)
-plot_heatmap(transition_matrix, categories)
-plot_heatmap(return_matrix, categories)
+# plot_heatmap(expected_matrix, categories)
+# plot_heatmap(transition_matrix, categories)
+# plot_heatmap(return_matrix, categories)
 
 for i in stocks_list:
     data_to_plot = cutting_each_stock(clustered_data, i)
     new_plot(data_to_plot, i)
-
-
-
-import seaborn as sns
-import matplotlib.pyplot as plt
 
 
 
